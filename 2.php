@@ -14,6 +14,7 @@ function  convertString($a, $b)
     $bReverse = mb_strrev($b);
     $start = mb_strpos($a, $b);
     $end = mb_strlen($b);
+    $start = mb_strpos($a, $b, $start + $end);
     $a = substr_replace($a, $bReverse, $start, $end);
     return $a;
 }
@@ -22,7 +23,7 @@ function mySortForKey($a, $b)
 {
     foreach ($a as $k => $v) {
         if (array_key_exists($b, $v)) {
-            $bArr[] = $v[$b];
+            $bArr[$k] = $v[$b];
         } else {
             throw new Exception("В подмассиве с индексом: {$k} нет элемента с индексом {$b}");
         }
@@ -37,21 +38,14 @@ function mySortForKey($a, $b)
     return $aRes;
 }
 
-
-$db_params = [
-    'dsn' => 'mysql:host=localhost;dbname=test_samson;charset=utf8',
-    'user' => 'root',
-    'pass' => '',
-];
-try {
-    $db = new PDO($db_params['dsn'], $db_params['user'], $db_params['pass']);
-}catch (PDOException $e){
-    echo $e->getMessage();
+$mysqli = new mysqli("localhost", "root", "", "test_samson", 3306);
+if ($mysqli->connect_errno) {
+    echo "Не удалось подключиться к MySQL: (" . $mysqli->connect_errno . ") " . $mysqli->connect_error;
 }
 
 function importXml($a)
 {
-    global $db;
+    global $mysqli;
     $products = simplexml_load_file($a);
     foreach ($products as $k => $product) {
         foreach ($product->attributes() as $attribute => $value) {
@@ -64,25 +58,31 @@ function importXml($a)
                     break;
             }
         }
-        $queryProduct = "SELECT * FROM a_product WHERE name='{$name}' AND code={$code}";
-        $res = $db->query($queryProduct);
-        $res = $res->fetchColumn();
-        if (!$res) {
-            $queryProduct = "INSERT INTO a_product (code, name) VALUES (:code, :name)";
-            $res = $db->prepare($queryProduct);
-            $res->execute([':code' => $code, ':name' => $name]);
+        $queryProduct = "SELECT * FROM a_product WHERE name=? AND code=?";
+        $res = $mysqli->prepare($queryProduct);
+        $res->bind_param('is', $code, $name);
+        $res->execute();
+        $res = $res->num_rows;
+        if ($res == 0) {
+            $queryProduct = "INSERT INTO a_product (code, name) VALUES (?, ?)";
+            $res = $mysqli->prepare($queryProduct);
+            $res->bind_param('is', $code, $name);
+            $res->execute();
         }
 
         foreach ($product->Цена as $price) {
             $typePrice = $price->attributes();
 
-            $queryPrice = "SELECT * FROM a_price WHERE code_product={$code} AND type_price='{$typePrice}' AND price={$price}";
-            $res = $db->query($queryPrice);
-            $res = $res->fetchColumn();
-            if (!$res) {
-                $queryPrice = "INSERT INTO a_price (code_product, type_price, price) VALUES (:code_product, :type_price, :price)";
-                $res = $db->prepare($queryPrice);
-                $res->execute([':code_product' => $code, ':type_price' => $typePrice, ':price' => $price]);
+            $queryPrice = "SELECT * FROM a_price WHERE code_product=? AND type_price=? AND price=?";
+            $res = $mysqli->prepare($queryPrice);
+            $res->bind_param('isi', $code, $typePrice, $price);
+            $res->execute();
+            $res = $res->num_rows;
+            if ($res == 0) {
+                $queryPrice = "INSERT INTO a_price (code_product, type_price, price) VALUES (?, ?, ?)";
+                $res = $mysqli->prepare($queryPrice);
+                $res->bind_param('isi', $code, $typePrice, $price);
+                $res->execute();
             }
         }
 
@@ -100,10 +100,10 @@ function importXml($a)
                 $queryInsertProperty = "INSERT INTO a_property (code_product, property, property_value) 
                                         VALUES ({$code}, '{$propertyName}', '{$propertyValue}')";
             }
-            $res = $db->query($querySelectProperty);
-            $res = $res->fetchColumn();
-            if ($res == false) {
-                $db->query($queryInsertProperty);
+            $res = $mysqli->query($querySelectProperty);
+            $res = $res->num_rows;
+            if ($res == 0) {
+                $mysqli->query($queryInsertProperty);
             }
         }
 
@@ -111,33 +111,33 @@ function importXml($a)
         foreach ($category as $categoryName) {
             if (is_string($categoryName)) {
                 $queryCategory = "SELECT * FROM a_category WHERE name='{$categoryName}'";
-                $res = $db->query($queryCategory);
-                $res = $res->fetchColumn();
-                if ($res == false) {
+                $res = $mysqli->query($queryCategory);
+                $res = $res->num_rows;
+                if ($res == 0) {
                     $queryCategory = "INSERT INTO a_category (name) VALUES ('{$categoryName}')";
-                    $res = $db->query($queryCategory);
+                    $res = $mysqli->query($queryCategory);
                 }
             } else {
                 foreach ($categoryName as $categoryKey => $categoryNameChild) {
                     if ($categoryKey) {
                         $categoryParentId = $categoryKey-1;
                         $query = "SELECT id FROM a_category WHERE name='{$categoryName[$categoryParentId]}'";
-                        $res = $db->query($query);
-                        $parentId = $res->fetch();
-                        var_dump($parentId['id']);
+                        $res = $mysqli->query($query);
+                        $parentId = $res->fetch_row();
+                        var_dump($parentId);
                         $querySelectCategory = "SELECT * FROM a_category WHERE name='{$categoryName[$categoryKey]}'
-                                                AND parrent_id={$parentId['id']}";
+                                                AND parrent_id={$parentId[0]}";
                         $queryInsertCategory = "INSERT INTO a_category (name, parrent_id) 
-                                                VALUES ('{$categoryName[$categoryKey]}', {$parentId['id']})";
+                                                VALUES ('{$categoryName[$categoryKey]}', {$parentId[0]})";
 
                     } else {
                         $querySelectCategory = "SELECT * FROM a_category WHERE name='{$categoryName[0]}'";
                         $queryInsertCategory = "INSERT INTO a_category (name) VALUES ('{$categoryName[0]}')";
                     }
-                    $res = $db->query($querySelectCategory);
-                    $res = $res->fetchColumn();
-                    if ($res == false) {
-                        $db->query($queryInsertCategory);
+                    $res = $mysqli->query($querySelectCategory);
+                    $res = $res->num_rows;
+                    if ($res == 0) {
+                        $mysqli->query($queryInsertCategory);
                     }
                 }
             }
