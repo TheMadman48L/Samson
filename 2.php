@@ -124,7 +124,6 @@ function importXml($a)
                         $query = "SELECT id FROM a_category WHERE name='{$categoryName[$categoryParentId]}'";
                         $res = $mysqli->query($query);
                         $parentId = $res->fetch_row();
-                        var_dump($parentId);
                         $querySelectCategory = "SELECT * FROM a_category WHERE name='{$categoryName[$categoryKey]}'
                                                 AND parrent_id={$parentId[0]}";
                         $queryInsertCategory = "INSERT INTO a_category (name, parrent_id) 
