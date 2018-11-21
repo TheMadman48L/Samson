@@ -106,10 +106,12 @@ function importXml($a)
                     break;
             }
         }
-        $queryProduct = "SELECT * FROM a_product WHERE name=? AND code=? AND category_id=?";
-        $res = $mysqli->prepare($queryProduct);
-        $res->bind_param('isi', $code, $name, $categoryId);
-        $res->execute();
+        $queryProduct = "SELECT * FROM a_product WHERE name='{$name}' AND code={$code} AND category_id={$categoryId}";
+        $res = $mysqli->query($queryProduct);
+//        $queryProduct = "SELECT * FROM a_product WHERE name=? AND code=? AND category_id=?";
+//        $res = $mysqli->prepare($queryProduct);
+//        $res->bind_param('sii', $name, $code, $categoryId);
+//        $res->execute();
         $res = $res->num_rows;
         if ($res == 0) {
             $queryProduct = "INSERT INTO a_product (code, name, category_id) VALUES (?, ?, ?)";
@@ -121,40 +123,107 @@ function importXml($a)
         foreach ($product->Цена as $price) {
             $typePrice = $price->attributes();
 
-            $queryPrice = "SELECT * FROM a_price WHERE code_product=? AND type_price=? AND price=?";
-            $res = $mysqli->prepare($queryPrice);
-            $res->bind_param('isi', $code, $typePrice, $price);
-            $res->execute();
+            $queryPrice = "SELECT * FROM a_price WHERE code_product={$code} AND type_price='{$typePrice}' AND price={$price}";
+            $res = $mysqli->query($queryPrice);
+//            $queryPrice = "SELECT * FROM a_price WHERE code_product=? AND type_price=? AND price=?";
+//            $res = $mysqli->prepare($queryPrice);
+//            $res->bind_param('isd', $code, $typePrice, $price);
+//            $res->execute();
             $res = $res->num_rows;
             if ($res == 0) {
                 $queryPrice = "INSERT INTO a_price (code_product, type_price, price) VALUES (?, ?, ?)";
                 $res = $mysqli->prepare($queryPrice);
-                $res->bind_param('isi', $code, $typePrice, $price);
+                $res->bind_param('isd', $code, $typePrice, $price);
                 $res->execute();
             }
         }
 
         foreach ($product->Свойства->children() as $propertyName => $propertyValue) {
+            $propertyUnit = null;
             if (!empty($propertyValue->attributes())) {
-                foreach ($propertyValue->attributes() as $propertyUnit => $propertyUnitValue) ;
-                $querySelectProperty = "SELECT * FROM a_property WHERE code_product={$code} AND property='{$propertyName}'
-                                        AND property_value='{$propertyValue}' AND property_setting='{$propertyUnit}'
-                                        AND setting_value='{$propertyUnitValue}'";
-                $queryInsertProperty = "INSERT INTO a_property (code_product, property, property_value, property_setting, setting_value) 
-                                        VALUES ({$code}, '{$propertyName}', '{$propertyValue}', '{$propertyUnit}', '{$propertyUnitValue}')";
-            } else {
-                $querySelectProperty = "SELECT * FROM a_property WHERE code_product={$code} AND property='{$propertyName}'
-                                        AND property_value='{$propertyValue}'";
-                $queryInsertProperty = "INSERT INTO a_property (code_product, property, property_value) 
-                                        VALUES ({$code}, '{$propertyName}', '{$propertyValue}')";
+                foreach ($propertyValue->attributes() as $propertyUnit) {
+                    $propertyUnit = (string)$propertyUnit;
+                }
             }
+            $querySelectProperty = "SELECT * FROM a_property WHERE code_product={$code} AND property='{$propertyName}'
+                                        AND property_value='{$propertyValue}' AND unit='{$propertyUnit}'";
             $res = $mysqli->query($querySelectProperty);
             $res = $res->num_rows;
             if ($res == 0) {
+                $queryInsertProperty = "INSERT INTO a_property (code_product, property, property_value, unit)
+                                        VALUES ({$code}, '{$propertyName}', '{$propertyValue}', '{$propertyUnit}')";
                 $mysqli->query($queryInsertProperty);
             }
         }
     }
+}
+
+function exportXml($a, $b)
+{
+    global $mysqli;
+
+    $xml = new XMLWriter();
+    $xml->openMemory();
+    $xml->setIndent(1);
+    $xml->setIndentString('    ');
+
+    $xml->startDocument('1.0', 'UTF-8');
+    $xml->startElement('Товары');
+
+    $queryProduct = "SELECT * FROM a_product WHERE category_id={$b}";
+    $products = $mysqli->query($queryProduct);
+    while ($product = $products->fetch_assoc()) {
+        $xml->startElement('Товар');
+        $xml->writeAttribute('Код', $product['code']);
+        $xml->writeAttribute('Название', $product['name']);
+
+        $queryPrice = "SELECT * FROM a_price WHERE code_product={$product['code']}";
+        $prices = $mysqli->query($queryPrice);
+        while ($price = $prices->fetch_assoc()) {
+            $xml->startElement('Цена');
+            $xml->writeAttribute('Тип', $price['type_price']);
+            $xml->text($price['price']);
+            $xml->endElement();
+        }
+
+        $queryProperty = "SELECT * FROM a_property WHERE code_product={$product['code']}";
+        $properties = $mysqli->query($queryProperty);
+        $row = $properties->num_rows;
+        if ($row) {
+            $xml->startElement('Свойства');
+            while ($property = $properties->fetch_assoc()){
+                $xml->startElement($property['property']);
+                if (!empty($property['unit'])) {
+                    $xml->writeAttribute('ЕдИзм', $property['unit']);
+                }
+                $xml->text($property['property_value']);
+                $xml->endElement();
+            }
+            $xml->endElement();
+        }
+
+        $queryCategory = "SELECT * FROM a_category WHERE id={$product['category_id']}";
+        $xml->startElement('Разделы');
+        $categories = [];
+        do {
+            $category = $mysqli->query($queryCategory);
+            $category = $category->fetch_assoc();
+            $categories[] = $category['name'];
+            $queryCategory = "SELECT * FROM a_category WHERE id={$category['parrent_id']}";
+        } while ($category['parrent_id']);
+        $categories = array_reverse($categories);
+        foreach ($categories as $v){
+            $xml->startElement('Раздел');
+            $xml->text($v);
+            $xml->endElement();
+        }
+        $xml->endElement();
+        }
+        $xml->endElement();
+
+    $xml->endElement();
+    $xml->endDocument();
+    echo $xml->outputMemory();
 }
 
 $a = [
@@ -166,4 +235,5 @@ $a = [
 ];
 $b = 'b';
 //var_dump(mySortForKey($a, $b));
-importXml('product.xml');
+//importXml('product.xml');
+exportXml('prod.xml', 1);
