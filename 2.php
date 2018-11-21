@@ -223,7 +223,8 @@ function exportXml($a, $b)
 
     $xml->endElement();
     $xml->endDocument();
-    echo $xml->outputMemory();
+    $result = $xml->outputMemory();
+    file_put_contents($a, $result);
 }
 
 $a = [
