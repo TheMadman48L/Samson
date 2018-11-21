@@ -48,6 +48,54 @@ function importXml($a)
     global $mysqli;
     $products = simplexml_load_file($a);
     foreach ($products as $k => $product) {
+
+        $category = (array)$product->Разделы;
+        foreach ($category as $categoryName) {
+            if (is_string($categoryName)) {
+                $querySelectCategory = "SELECT * FROM a_category WHERE name='{$categoryName}'";
+                $res = $mysqli->query($querySelectCategory);
+                $count = $res->num_rows;
+                if ($count == 0) {
+                    $queryCategory = "INSERT INTO a_category (name) VALUES ('{$categoryName}')";
+                    $res = $mysqli->query($queryCategory);
+                    $res = $mysqli->query($querySelectCategory);
+                    $res = $res->fetch_assoc();
+                    $categoryId = $res['id'];
+                } else {
+                    $res = $res->fetch_assoc();
+                    $categoryId = $res['id'];
+                }
+            } else {
+                foreach ($categoryName as $categoryKey => $categoryNameChild) {
+                    if ($categoryKey) {
+                        $categoryParentId = $categoryKey-1;
+                        $query = "SELECT id FROM a_category WHERE name='{$categoryName[$categoryParentId]}'";
+                        $res = $mysqli->query($query);
+                        $parentId = $res->fetch_row();
+                        $querySelectCategory = "SELECT * FROM a_category WHERE name='{$categoryName[$categoryKey]}'
+                                                AND parrent_id={$parentId[0]}";
+                        $queryInsertCategory = "INSERT INTO a_category (name, parrent_id) 
+                                                VALUES ('{$categoryName[$categoryKey]}', {$parentId[0]})";
+
+                    } else {
+                        $querySelectCategory = "SELECT * FROM a_category WHERE name='{$categoryName[0]}'";
+                        $queryInsertCategory = "INSERT INTO a_category (name) VALUES ('{$categoryName[0]}')";
+                    }
+                    $res = $mysqli->query($querySelectCategory);
+                    $count = $res->num_rows;
+                    if ($count == 0) {
+                        $mysqli->query($queryInsertCategory);
+                        $res = $mysqli->query($querySelectCategory);
+                        $res = $res->fetch_assoc();
+                        $categoryId = $res['id'];
+                    } else {
+                        $res = $res->fetch_assoc();
+                        $categoryId = $res['id'];
+                    }
+                }
+            }
+        }
+
         foreach ($product->attributes() as $attribute => $value) {
             switch ($attribute) {
                 case 'Код':
@@ -58,15 +106,15 @@ function importXml($a)
                     break;
             }
         }
-        $queryProduct = "SELECT * FROM a_product WHERE name=? AND code=?";
+        $queryProduct = "SELECT * FROM a_product WHERE name=? AND code=? AND category_id=?";
         $res = $mysqli->prepare($queryProduct);
-        $res->bind_param('is', $code, $name);
+        $res->bind_param('isi', $code, $name, $categoryId);
         $res->execute();
         $res = $res->num_rows;
         if ($res == 0) {
-            $queryProduct = "INSERT INTO a_product (code, name) VALUES (?, ?)";
+            $queryProduct = "INSERT INTO a_product (code, name, category_id) VALUES (?, ?, ?)";
             $res = $mysqli->prepare($queryProduct);
-            $res->bind_param('is', $code, $name);
+            $res->bind_param('isi', $code, $name, $categoryId);
             $res->execute();
         }
 
@@ -104,41 +152,6 @@ function importXml($a)
             $res = $res->num_rows;
             if ($res == 0) {
                 $mysqli->query($queryInsertProperty);
-            }
-        }
-
-        $category = (array)$product->Разделы;
-        foreach ($category as $categoryName) {
-            if (is_string($categoryName)) {
-                $queryCategory = "SELECT * FROM a_category WHERE name='{$categoryName}'";
-                $res = $mysqli->query($queryCategory);
-                $res = $res->num_rows;
-                if ($res == 0) {
-                    $queryCategory = "INSERT INTO a_category (name) VALUES ('{$categoryName}')";
-                    $res = $mysqli->query($queryCategory);
-                }
-            } else {
-                foreach ($categoryName as $categoryKey => $categoryNameChild) {
-                    if ($categoryKey) {
-                        $categoryParentId = $categoryKey-1;
-                        $query = "SELECT id FROM a_category WHERE name='{$categoryName[$categoryParentId]}'";
-                        $res = $mysqli->query($query);
-                        $parentId = $res->fetch_row();
-                        $querySelectCategory = "SELECT * FROM a_category WHERE name='{$categoryName[$categoryKey]}'
-                                                AND parrent_id={$parentId[0]}";
-                        $queryInsertCategory = "INSERT INTO a_category (name, parrent_id) 
-                                                VALUES ('{$categoryName[$categoryKey]}', {$parentId[0]})";
-
-                    } else {
-                        $querySelectCategory = "SELECT * FROM a_category WHERE name='{$categoryName[0]}'";
-                        $queryInsertCategory = "INSERT INTO a_category (name) VALUES ('{$categoryName[0]}')";
-                    }
-                    $res = $mysqli->query($querySelectCategory);
-                    $res = $res->num_rows;
-                    if ($res == 0) {
-                        $mysqli->query($queryInsertCategory);
-                    }
-                }
             }
         }
     }
