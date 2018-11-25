@@ -1,0 +1,10 @@
+php_flag engine 0
+
+RemoveHandler .phtml .php .php2 .php3 .php4 .php5 .php6 .php7 .phps .cgi .pl .asp .aspx .shtml .shtm .fcgi .fpl .htm .html
+AddType text/plain .phtml .php .php2 .php3 .php4 .php5 .php6 .php7 .phps .cgi .pl .asp .aspx .shtml .shtm .fcgi .fpl .htm .html
+
+RewriteEngine On
+RewriteCond %{HTTP_HOST} img\.test\.loc$
+RewriteRule ^([A-Za-z])(\d\d)\.jpg$ http://%0/goods/$1/$2.jpg [L]
+
+ErrorDocument 404 http://test.loc/error.html
